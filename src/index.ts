@@ -17,13 +17,13 @@ const PORT = Number(process.env.PORT) || 3500
 const GRAPH_QL = '/graphql'
 
 async function main() {
-  const {redis, publisher, subscriber} = createRedisClients()
+  const { redis, publisher, subscriber } = createRedisClients()
 
   const store = new RedisRoomStore(redis)
   const events = new RedisEventBus(publisher, subscriber)
 
   const schema = makeSchema({ store, events })
-  
+
   const app = express()
   const httpServer = createServer(app)
 
