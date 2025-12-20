@@ -1,58 +1,62 @@
-import { pubsub, TOPICS, publishPinged, publishRoomUpdated } from '../pubsub.js'
-import { createRoom, getRoomById, getRoomByJoinCode, joinRoom } from '../store/roomStore.js'
+import type { RedisRoomStore } from "../store/roomStore";
+import type { RedisEventBus } from "../events/eventBus";
+import { resolve } from "node:dns";
 
-export const resolvers = {
-  Query: {
-    // Simple “is the server alive” check
-    health: () => 'OK',
+export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventBus }) {
+  const { store, events } = deps;
 
-    roomById: (_: unknown, { roomId }: { roomId: string }) => getRoomById(roomId),
-    roomByJoinCode: (_: unknown, { joinCode }: { joinCode: string }) => getRoomByJoinCode(joinCode),
-  },
+  return {
+    Query: {
+      health: () => 'OK',
 
-  Mutation: {
-    // Used to prove HTTP + WS works; keeps debugging easy.
-    ping: async (_: unknown, { message }: { message: string }) => {
-      const payload = `pong: ${message}`
-      await publishPinged(payload)
-      return payload
-    },
+      roomById: (_: unknown, { roomId }: { roomId: string }) => {
+        return store.getRoomById(roomId);
+      },
 
-    // Host creates a room and becomes the first player.
-    createRoom: async (
-      _: unknown,
-      args: {
-        hostName: string
-        lobbyName: string
-        rounds: number
-        playerLimit: number
-        timeLimit: number
+      roomByJoinCode: (_: unknown, { joinCode }: { joinCode: string }) => {
+        return store.getRoomByJoinCode(joinCode);
       }
-    ) => {
-      const payload = createRoom(args)
-      // Push the updated room state to anyone subscribed to this room.
-      await publishRoomUpdated(payload.room)
-      return payload
     },
+    Mutation: {
+      ping: async (_: unknown, { message }: { message: string }) => {
+        const payload = `pong: ${message}`;
+        await events.publishPing('ping', payload);
+        return payload;
+      },
 
-    // A player joins by join code.
-    joinRoom: async (_: unknown, args: { joinCode: string; playerName: string }) => {
-      const room = joinRoom(args)
-      await publishRoomUpdated(room)
-      return room
-    },
-  },
+      createRoom: async (_: unknown, args: {
+        hostName: string;
+        lobbyName: string;
+        rounds: number;
+        playerLimit: number;
+        timeLimit: number;
+      }) => {
+        const payload = await store.createRoom(args);
+        await events.publishRoomUpdated(payload.room);
+        return payload;
+      },
 
-  Subscription: {
-    pinged: {
-      // Broadcasts whenever ping() publishes.
-      subscribe: () => pubsub.asyncIterableIterator(TOPICS.PINGED),
+      joinRoom: async (_: unknown, args: { joinCode: string; playerName: string }) => {
+        const room = await store.joinRoom(args);
+        await events.publishRoomUpdated(room);
+        return room;
+      }
     },
+    Subscription: {
+      pinged: {
+        subscribe: () => events.subscribePing(),
+        resolve: (payload: { pinged: string }) => payload.pinged,
+      },
 
-    roomUpdated: {
-      // Subscribes to a room-specific topic so only that room’s updates arrive.
-      subscribe: (_: unknown, { roomId }: { roomId: string }) =>
-        pubsub.asyncIterableIterator(TOPICS.roomUpdated(roomId)),
-    },
-  },
+      roomUpdated: {
+        // IMPORTANT: roomId selects a *room-specific* topic, so no filtering required.
+        subscribe: (_: unknown, { roomId }: { roomId: string }) => {
+          return events.subscribeRoomUpdated(roomId);
+        },
+        resolve: (payload: { roomUpdated: any }) => {
+          return payload.roomUpdated;
+        }
+      }
+    }
+  }
 }
