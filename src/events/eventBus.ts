@@ -12,12 +12,12 @@ export class RedisEventBus {
     });
   }
 
-  private topicPing(): string {
-    return 'ping';
+  private topicRoomUpdated(roomId: string): string {
+    return `ROOM_UPDATED:${roomId}`;
   }
 
-  private topicRoomUpdated(roomId: string): string {
-    return `ROOM_UPDATED: ${roomId}`;
+  private topicRoomClosed(roomId: string): string {
+    return `ROOM_CLOSED:${roomId}`;
   }
 
   publishPing(event: string, payload: string): Promise<void> {
@@ -34,5 +34,13 @@ export class RedisEventBus {
 
   subscribeRoomUpdated(roomId: string){
     return this.pubSub.asyncIterator(this.topicRoomUpdated(roomId));
+  }
+
+  publishRoomClosed(roomId: string): Promise<void> {
+    return this.pubSub.publish(this.topicRoomClosed(roomId), { roomClosed: roomId });
+  }
+
+  subscribeRoomClosed(roomId: string){
+    return this.pubSub.asyncIterator(this.topicRoomClosed(roomId));
   }
 }

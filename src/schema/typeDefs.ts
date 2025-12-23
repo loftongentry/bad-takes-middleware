@@ -32,6 +32,12 @@ export const typeDefs = /* GraphQL */ `
     room: Room!
     playerId: ID!
   }
+  
+  type LeaveRoomPayload {
+    roomId: ID!
+    closed: Boolean!
+    room: Room
+  }
 
   type Query {
     health: String!
@@ -51,12 +57,13 @@ export const typeDefs = /* GraphQL */ `
     ): CreateRoomPayload!
 
     joinRoom(joinCode: String!, playerName: String!): JoinRoomPayload!
-    leaveRoom(roomId: ID!, playerId: ID!): Room!
+    leaveRoom(roomId: ID!, playerId: ID!): LeaveRoomPayload!
     kickPlayer(roomId: ID!, playerId: ID!): Room!
     startGame(roomId: ID!): Room!
   }
 
   type Subscription {
     roomUpdated(roomId: ID!): Room!
+    roomClosed(roomId: ID!): ID!
   }
 `

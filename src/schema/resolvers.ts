@@ -1,6 +1,5 @@
 import type { RedisRoomStore } from "../store/roomStore";
 import type { RedisEventBus } from "../events/eventBus";
-import { resolve } from "node:dns";
 
 export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventBus }) {
   const { store, events } = deps;
@@ -37,9 +36,15 @@ export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventB
       },
 
       leaveRoom: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
-        const room = await store.leaveRoom(roomId, playerId);
-        await events.publishRoomUpdated(room);
-        return room;
+        const payload = await store.leaveRoom(roomId, playerId);
+
+        if (payload.closed) {
+          await events.publishRoomClosed(roomId);
+        } else if (payload.room) {
+          await events.publishRoomUpdated(payload.room);
+        }
+
+        return payload;
       },
 
       kickPlayer: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
@@ -62,6 +67,14 @@ export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventB
         },
         resolve: (payload: { roomUpdated: any }) => {
           return payload.roomUpdated;
+        }
+      },
+      roomClosed: {
+        subscribe: (_: unknown, { roomId }: { roomId: string }) => {
+          return events.subscribeRoomClosed(roomId);
+        },
+        resolve: (payload: { roomClosed: any }) => {
+          return payload.roomClosed;
         }
       }
     }
