@@ -37,9 +37,9 @@ export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventB
       },
 
       joinRoom: async (_: unknown, args: { joinCode: string; playerName: string }) => {
-        const room = await store.joinRoom(args);
-        await events.publishRoomUpdated(room);
-        return room;
+        const payload = await store.joinRoom(args);
+        await events.publishRoomUpdated(payload.room);
+        return payload;
       }
     },
     Subscription: {

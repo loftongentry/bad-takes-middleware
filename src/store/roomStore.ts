@@ -186,15 +186,15 @@ export class RedisRoomStore {
 
     return 1
   `
-  
-  async joinRoom(input: JoinRoomInput): Promise<Room> {
+
+  async joinRoom(input: JoinRoomInput): Promise<{ room: Room; playerId: string }> {
     const code = input.joinCode.trim().toUpperCase()
     const name = input.playerName.trim()
-    
-    if(!code) {
+
+    if (!code) {
       throw new Error('joinCode required')
     }
-    
+
     if (!name) {
       throw new Error('playerName required')
     }
@@ -217,7 +217,7 @@ export class RedisRoomStore {
       isHost: false,
       score: 0,
     }
-    
+
     // Attempt to join via Lua script
     const res = await this.redis.eval(
       this.joinLua,
@@ -234,18 +234,23 @@ export class RedisRoomStore {
 
     if (res === -1) {
       throw new Error('Room not found')
-    } 
+    }
     if (res === -2) {
       throw new Error('Cannot join room: game already in progress')
-    } 
+    }
     if (res === -3) {
       throw new Error('Cannot join room: player limit reached')
     }
     if (res !== 1) {
       throw new Error('Failed to join room')
     }
-    
+
     // Return updated room state
-    return this.getRoomById(roomId) as Promise<Room> 
+    const room = await this.getRoomById(roomId)
+    if (!room) {
+      throw new Error('Room not found after joining')
+    }
+
+    return { room, playerId: player.id }
   }
 }

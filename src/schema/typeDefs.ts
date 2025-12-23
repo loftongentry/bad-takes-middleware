@@ -28,6 +28,11 @@ export const typeDefs = /* GraphQL */ `
     hostPlayerId: ID!
   }
 
+  type JoinRoomPayload {
+    room: Room!
+    playerId: ID!
+  }
+
   type Query {
     health: String!
     roomById(roomId: ID!): Room
@@ -45,7 +50,7 @@ export const typeDefs = /* GraphQL */ `
       timeLimit: Int!
     ): CreateRoomPayload!
 
-    joinRoom(joinCode: String!, playerName: String!): Room!
+    joinRoom(joinCode: String!, playerName: String!): JoinRoomPayload!
   }
 
   type Subscription {
