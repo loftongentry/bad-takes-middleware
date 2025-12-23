@@ -2,7 +2,9 @@ import Redis from 'ioredis'
 
 export function createRedisClients() {
   const url = process.env.REDIS_URL
-  if (!url) throw new Error('REDIS_URL is required (Redis-only mode)')
+  if (!url) {
+    throw new Error('REDIS_URL is required (Redis-only mode)')
+  }
 
   const base = {
     maxRetriesPerRequest: null as any,
