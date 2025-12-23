@@ -51,10 +51,12 @@ export const typeDefs = /* GraphQL */ `
     ): CreateRoomPayload!
 
     joinRoom(joinCode: String!, playerName: String!): JoinRoomPayload!
+    leaveRoom(roomId: ID!, playerId: ID!): Room!
+    kickPlayer(roomId: ID!, playerId: ID!): Room!
+    startGame(roomId: ID!): Room!
   }
 
   type Subscription {
-    pinged: String!
     roomUpdated(roomId: ID!): Room!
   }
 `

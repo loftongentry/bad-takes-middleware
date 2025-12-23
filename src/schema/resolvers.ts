@@ -18,12 +18,6 @@ export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventB
       }
     },
     Mutation: {
-      ping: async (_: unknown, { message }: { message: string }) => {
-        const payload = `pong: ${message}`;
-        await events.publishPing('ping', payload);
-        return payload;
-      },
-
       createRoom: async (_: unknown, args: {
         hostName: string;
         lobbyName: string;
@@ -40,14 +34,27 @@ export function makeResolvers(deps: { store: RedisRoomStore; events: RedisEventB
         const payload = await store.joinRoom(args);
         await events.publishRoomUpdated(payload.room);
         return payload;
+      },
+
+      leaveRoom: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
+        const room = await store.leaveRoom(roomId, playerId);
+        await events.publishRoomUpdated(room);
+        return room;
+      },
+
+      kickPlayer: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
+        const room = await store.kickPlayer(roomId, playerId);
+        await events.publishRoomUpdated(room);
+        return room;
+      },
+      
+      startGame: async (_: unknown, { roomId }: { roomId: string }) => {
+        const room = await store.startGame(roomId);
+        await events.publishRoomUpdated(room);
+        return room;
       }
     },
     Subscription: {
-      pinged: {
-        subscribe: () => events.subscribePing(),
-        resolve: (payload: { pinged: string }) => payload.pinged,
-      },
-
       roomUpdated: {
         // IMPORTANT: roomId selects a *room-specific* topic, so no filtering required.
         subscribe: (_: unknown, { roomId }: { roomId: string }) => {

@@ -186,7 +186,7 @@ export class RedisRoomStore {
 
     return 1
   `
-
+  
   async joinRoom(input: JoinRoomInput): Promise<{ room: Room; playerId: string }> {
     const code = input.joinCode.trim().toUpperCase()
     const name = input.playerName.trim()
@@ -252,5 +252,46 @@ export class RedisRoomStore {
     }
 
     return { room, playerId: player.id }
+  }
+
+  async leaveRoom(roomId: string, playerId: string): Promise<Room> {
+    // Remove player from room
+    await this.redis.hdel(this.keyPlayers(roomId), playerId)
+
+    // Return updated room state
+    const room = await this.getRoomById(roomId)
+    if (!room) {
+      throw new Error('Room not found after leaving')
+    }
+
+    return room
+  }
+
+  async kickPlayer(roomId: string, playerId: string): Promise<Room> {
+    // Remove player from room
+    await this.redis.hdel(this.keyPlayers(roomId), playerId)
+
+    // Return updated room state
+    const room = await this.getRoomById(roomId)   
+
+    if (!room) {
+      throw new Error('Room not found after kicking player')
+    }
+
+    return room
+  }
+  
+  async startGame(roomId: string): Promise<Room> {
+    const roomKey = this.keyRoom(roomId)  
+    // Update room status to IN_GAME
+    await this.redis.hset(roomKey, 'status', 'IN_GAME')
+    
+    // Return updated room state
+    const room = await this.getRoomById(roomId)
+    if (!room) {
+      throw new Error('Room not found after starting game')
+    }
+
+    return room
   }
 }
