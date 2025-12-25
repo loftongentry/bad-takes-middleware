@@ -20,14 +20,6 @@ export class RedisEventBus {
     return `ROOM_CLOSED:${roomId}`;
   }
 
-  publishPing(event: string, payload: string): Promise<void> {
-    return this.pubSub.publish(event, { pinged: payload });
-  }
-
-  subscribePing() {
-    return this.pubSub.asyncIterator('ping');
-  }
-
   publishRoomUpdated(room: Room): Promise<void> {
     return this.pubSub.publish(this.topicRoomUpdated(room.id), { roomUpdated: room });
   }
