@@ -16,9 +16,17 @@ const typeDefs = `
     score: Int!
   }
 
+  type TurnInfo {
+    defenderId: ID!
+    promptId: ID!
+    promptText: String!
+  }
+
   type GameState {
     deadline: String
     votesCast: Int
+    submittedPromptsCount: Int
+    currentTurn: TurnInfo
   }
 
   type Room {
@@ -43,6 +51,7 @@ const typeDefs = `
     leaveRoom(roomId: ID!, playerId: ID!): Boolean!
     kickPlayer(roomId: ID!, playerId: ID!): Boolean!
     startGame(roomId: ID!): Room!
+    submitPrompt(roomId: ID!, playerId: ID!, prompt: String!): Boolean!
   }
 
   type Subscription {
