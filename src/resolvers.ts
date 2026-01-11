@@ -34,6 +34,12 @@ export const resolvers = {
     },
     submitPrompt: async (_: unknown, { roomId, playerId, prompt }: { roomId: string; playerId: string; prompt: string }) => {
       return await RoomStore.submitPrompt(roomId, playerId, prompt);
+    },
+    endTurn: async (_: unknown, { roomId }: { roomId: string }) => {
+      return await RoomStore.endTurn(roomId);
+    },
+    submitVote: async (_: unknown, { roomId, playerId, value }: { roomId: string; playerId: string; value: number }) => {
+      return await RoomStore.submitVote(roomId, playerId, value);
     }
   },
   Subscription: {

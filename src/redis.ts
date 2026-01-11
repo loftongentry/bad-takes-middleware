@@ -340,6 +340,97 @@ export const RoomStore = {
     await this.publish(finalRoom);
   },
 
+  async endTurn(roomId: string) {
+    try {
+      const room = await this.get(roomId);
+      if (!room) {
+        throw new Error("Room not found");
+      }
+
+      if (room.status !== "DEFENSE") {
+        return false;
+      }
+
+      console.log(`[GameLogic] Ending turn for room ${roomId}`);
+
+      await redis.hset(this.roomKey(roomId), "status", "VOTING");
+
+      const updatedRoom = await this.get(roomId);
+      await this.publish(updatedRoom);
+      return true;
+    } catch (error) {
+      console.error(`[RoomStore.endTurn] Failed to end turn for room ${roomId}:`, error);
+      throw error;
+    }
+  },
+
+  async submitVote(roomId: string, playerId: string, value: number) {
+    try {
+      const room = await this.get(roomId);
+      if (!room) {
+        throw new Error("Room not found");
+      }
+
+      if (room.status !== "VOTING") {
+        throw new Error("Not in voting phase");
+      }
+
+      const state = room.gameState;
+
+      if (!state.votes) {
+        state.votes = {};
+      }
+
+      state.votes[playerId] = value;
+
+      const votersCount = Object.keys(state.votes).length;
+      const requiredVotes = room.players.length - 1; // Exclude defender
+
+      console.log(`[GameLogic] Player ${playerId} voted in room ${roomId}: (${votersCount}/${requiredVotes})`);
+
+      if (votersCount >= requiredVotes) {
+        console.log(`[GameLogic] All votes in for room ${roomId}, Tallying score...`);
+        
+        // Calculate round score
+        let roundScore = 0;
+        Object.values(state.votes).forEach((v: any) => {
+          roundScore += v;
+        });
+
+        // Update defender's score
+        const defenderId = state.currentTurn.defenderId;
+        const playerIndex = room.players.findIndex((p: any) => p.id === defenderId);
+
+        if (playerIndex !== -1) {
+          // Update the raw JSON string in Redis
+          const players = room.players;
+          players[playerIndex].score += roundScore;
+          
+          // Save updated player list
+          await redis.hset(this.playersKey(roomId), defenderId, JSON.stringify(players[playerIndex]));
+        }
+
+        // Clear votes for next round
+        state.votes = {};
+        // Save cleared state immediately so next round is clean
+        await redis.hset(this.roomKey(roomId), "gameState", JSON.stringify(state));
+        
+        // Start next turn or end game
+        await this.startTurn(roomId);
+      } else {
+        // Waiting for others
+        await redis.hset(this.roomKey(roomId), "gameState", JSON.stringify(state));
+        const updatedRoom = await this.get(roomId);
+        await this.publish(updatedRoom);
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`[RoomStore.submitVote] Failed to submit vote for room ${roomId}:`, error);
+      throw error;
+    }
+  },
+
   _generateQueue(players: any[], prompts: any[]) {
     // Shuffle prompts randomly
     const shuffledPrompts = [...prompts].sort(() => 0.5 - Math.random());
