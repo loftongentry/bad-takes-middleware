@@ -254,7 +254,7 @@ export const RoomStore = {
     }
   },
 
-  // TODO: Need to add logic to force faster entry of prompts based on timeLimit setting
+  // TODO: Need to add logic to force faster entry of prompts based on timeLimit setting (that also would need to be added into schema)
   async startGame(roomId: string) {
     try {
       const room = await this.get(roomId);
@@ -280,6 +280,8 @@ export const RoomStore = {
     }
   },
 
+
+  // TODO: handle race conditions where multiple prompts are submitted at once
   async submitPrompt(roomId: string, playerId: string, prompt: string) {
     try {
       const room = await this.get(roomId);
@@ -322,6 +324,8 @@ export const RoomStore = {
     }
   },
 
+
+  // TODO: implement server side timers
   async startTurn(roomId: string) {
     const room = await this.get(roomId);
     if (!room) {
@@ -475,12 +479,13 @@ export const RoomStore = {
     }
   },
 
+
+  // TODO: update to avoid self-defense
   _generateQueue(players: any[], prompts: any[]) {
     // Shuffle prompts randomly
     const shuffledPrompts = [...prompts].sort(() => 0.5 - Math.random());
 
     // Assign each player a prompt to defend 
-    // TODO: add in logic to avoid self-defense
     return players.map((p, i) => ({
       defenderId: p.id,
       promptId: shuffledPrompts[i % shuffledPrompts.length].id,
