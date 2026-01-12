@@ -27,7 +27,6 @@ const typeDefs = `
     votesCast: Int
     submittedPromptsCount: Int
     currentTurn: TurnInfo
-    votedPlayers: [ID!]
   }
 
   type Room {
