@@ -22,12 +22,10 @@ export const resolvers = {
       return { room, playerId }
     },
     leaveRoom: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
-      await RoomStore.leave(roomId, playerId);
-      return true;
+      return await RoomStore.leave(roomId, playerId);
     },
     kickPlayer: async (_: unknown, { roomId, playerId }: { roomId: string; playerId: string }) => {
-      await RoomStore.kick(roomId, playerId);
-      return true;
+      return await RoomStore.kick(roomId, playerId);
     },
     startGame: async (_: unknown, { roomId }: { roomId: string }) => {
       return await RoomStore.startGame(roomId);
@@ -40,6 +38,9 @@ export const resolvers = {
     },
     submitVote: async (_: unknown, { roomId, playerId, value }: { roomId: string; playerId: string; value: number }) => {
       return await RoomStore.submitVote(roomId, playerId, value);
+    },
+    resetGame: async (_: unknown, { roomId }: { roomId: string }) => {
+      return await RoomStore.resetGame(roomId);
     }
   },
   Subscription: {

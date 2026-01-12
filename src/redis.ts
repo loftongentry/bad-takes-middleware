@@ -24,6 +24,7 @@ export const RoomStore = {
   // --- Keys ---
   roomKey: (id: string) => `room:${id}`,
   playersKey: (id: string) => `room:${id}:players`,
+  votesKey: (id: string) => `room:${id}:votes`,
   joinKey: (code: string) => `join:${code.toUpperCase()}`,
 
   // --- Read ---
@@ -32,11 +33,12 @@ export const RoomStore = {
 
     try {
       // Pipeline: Fetch room metadata + players in one trip
-      const [roomRes, playersRes] = await redis
+      const [roomRes, playersRes, votesRes] = await redis
         .pipeline()
         .hgetall(this.roomKey(roomId))
         .hgetall(this.playersKey(roomId))
-        .exec() as [any, any];
+        .hgetall(this.votesKey(roomId))
+        .exec() as [any, any, any];
 
       // Check for Pipeline Errors
       if (roomRes[0]) {
@@ -45,9 +47,13 @@ export const RoomStore = {
       if (playersRes[0]) {
         throw new Error(`Redis Pipeline Error (Players): ${playersRes[0]}`);
       }
+      if (votesRes[0]) {
+        throw new Error(`Redis Pipeline Error (Votes): ${votesRes[0]}`);
+      }
 
       const roomData = roomRes[1];
       const playersData = playersRes[1];
+      const votesData = votesRes[1] || {};
 
       if (!roomData || Object.keys(roomData).length === 0) {
         return null;
@@ -66,6 +72,12 @@ export const RoomStore = {
         gameState = roomData.gameState ? JSON.parse(roomData.gameState) : null;
       } catch (parseErr) {
         console.error(`[RoomStore.get] Failed to parse gameState for room ${roomId}:`, parseErr);
+      }
+
+      // Injecting vote data manually
+      if (gameState) {
+        gameState.votesCast = Object.keys(votesData).length;
+        gameState.votedPlayers = Object.keys(votesData);
       }
 
       return {
@@ -182,13 +194,13 @@ export const RoomStore = {
       const room = await this.get(roomId);
       if (!room) {
         console.warn(`[RoomStore.leave] Ignored: Room ${roomId} does not exist`);
-        return;
+        return false;
       }
 
       const player = room.players.find((p: any) => p.id === playerId);
       if (!player) {
         console.warn(`[RoomStore.leave] Ignored: Player ${playerId} not in room ${roomId}`);
-        return;
+        return false;
       }
 
       if (player.isHost) {
@@ -208,8 +220,11 @@ export const RoomStore = {
         const updatedRoom = await this.get(roomId);
         await this.publish(updatedRoom);
       }
+
+      return true
     } catch (error) {
       console.error(`[RoomStore.leave] Error handling leave for ${roomId}:`, error);
+      return false;
     }
   },
 
@@ -217,13 +232,13 @@ export const RoomStore = {
     try {
       const room = await this.get(roomId);
       if (!room) {
-        return;
+        throw new Error("Room not found");
       }
 
       const player = room.players.find((p: any) => p.id === playerId);
       if (!player) {
         console.warn(`[RoomStore.kick] Failed: Player ${playerId} not found in ${roomId}`);
-        return;
+        return false;
       }
 
       console.log(`[RoomStore.kick] Kicking player ${playerId} from ${roomId}`);
@@ -231,10 +246,11 @@ export const RoomStore = {
       await redis.hdel(this.playersKey(roomId), playerId);
       const updatedRoom = await this.get(roomId);
       await this.publish(updatedRoom);
-
+      
+      return true;
     } catch (error) {
       console.error(`[RoomStore.kick] Error kicking player:`, error);
-      throw new Error("Failed to kick player");
+      throw error;
     }
   },
 
@@ -324,15 +340,16 @@ export const RoomStore = {
 
     if (!nextTurn) {
       // No more turns, transition to RESULTS
+      console.log(`[GameLogic] No more turns in room ${roomId}, transitioning to RESULTS`);
       await redis.hset(this.roomKey(roomId), "status", "RESULTS");
     } else {
       state.currentTurn = nextTurn;
-      state.votes = {};
 
       // Save updated state
       await redis.multi()
         .hset(this.roomKey(roomId), "gameState", JSON.stringify(state))
         .hset(this.roomKey(roomId), "status", "DEFENSE")
+        .del(this.votesKey(roomId))
         .exec();
     }
 
@@ -375,51 +392,39 @@ export const RoomStore = {
         throw new Error("Not in voting phase");
       }
 
-      const state = room.gameState;
+      await redis.hset(this.votesKey(roomId), playerId, value.toString());
 
-      if (!state.votes) {
-        state.votes = {};
-      }
+      // Get the exact number of votes right now
+      const votesData = await redis.hgetall(this.votesKey(roomId));
+      const votersCount = Object.keys(votesData).length;
 
-      state.votes[playerId] = value;
+      const requiredVotes = room.players.length - 1;
 
-      const votersCount = Object.keys(state.votes).length;
-      const requiredVotes = room.players.length - 1; // Exclude defender
-
-      console.log(`[GameLogic] Player ${playerId} voted in room ${roomId}: (${votersCount}/${requiredVotes})`);
+      console.log(`[GameLogic] Player ${playerId} voted in room ${roomId} (${votersCount}/${requiredVotes})`);
 
       if (votersCount >= requiredVotes) {
-        console.log(`[GameLogic] All votes in for room ${roomId}, Tallying score...`);
-        
-        // Calculate round score
-        let roundScore = 0;
-        Object.values(state.votes).forEach((v: any) => {
-          roundScore += v;
-        });
+        console.log(`[GameLogic] All votes in for room ${roomId}, tallying votes`);
 
-        // Update defender's score
-        const defenderId = state.currentTurn.defenderId;
+        // Calculate score from fetched data
+        let roundScore = 0;
+        for (const vote of Object.values(votesData)) {
+          roundScore += Number(vote);
+        }
+
+        // Update defender score
+        const defenderId = room.gameState?.currentTurn?.defenderId;
         const playerIndex = room.players.findIndex((p: any) => p.id === defenderId);
 
         if (playerIndex !== -1) {
-          // Update the raw JSON string in Redis
-          const players = room.players;
-          players[playerIndex].score += roundScore;
-          
-          // Save updated player list
-          await redis.hset(this.playersKey(roomId), defenderId, JSON.stringify(players[playerIndex]));
+          const player = room.players[playerIndex];
+          player.score += roundScore;
+
+          // Save updated player data
+          await redis.hset(this.playersKey(roomId), player.id, JSON.stringify(player));
         }
 
-        // Clear votes for next round
-        state.votes = {};
-        // Save cleared state immediately so next round is clean
-        await redis.hset(this.roomKey(roomId), "gameState", JSON.stringify(state));
-        
-        // Start next turn or end game
         await this.startTurn(roomId);
       } else {
-        // Waiting for others
-        await redis.hset(this.roomKey(roomId), "gameState", JSON.stringify(state));
         const updatedRoom = await this.get(roomId);
         await this.publish(updatedRoom);
       }
@@ -427,6 +432,45 @@ export const RoomStore = {
       return true;
     } catch (error) {
       console.error(`[RoomStore.submitVote] Failed to submit vote for room ${roomId}:`, error);
+      throw error;
+    }
+  },
+
+  async resetGame(roomId: string) {
+    try{
+      const room = await this.get(roomId);
+      if(!room){
+        throw new Error("Room not found");
+      }
+
+      console.log(`[GameLogic] Resetting game for room ${roomId}`);
+
+      const scorePromises = room.players.map((p: any) => {
+        p.score = 0;
+        return redis.hset(this.playersKey(roomId), p.id, JSON.stringify(p));
+      });
+      await Promise.all(scorePromises);
+
+      const emptyState = {
+        prompts: [],
+        queue: [],
+        votes: {},
+        currentTurn: null
+      };
+
+      await redis.multi()
+        .hset(this.roomKey(roomId), {
+          "status": "LOBBY",
+          "gameState": JSON.stringify(emptyState)
+        })
+        .del(this.votesKey(roomId))
+        .exec();
+
+      const updatedRoom = await this.get(roomId);
+      await this.publish(updatedRoom);
+      return true;
+    } catch(error){
+      console.error(`[RoomStore.resetGame] Failed to reset game for room ${roomId}:`, error);
       throw error;
     }
   },
